@@ -135,14 +135,14 @@ if (typeof module !== 'undefind' && typeof exports !== 'undefined' && typeof req
 	}
 }
 
-this.makeHtml = function(text) {
+this.makeHtml = function(text, headerLevelStart) {
 //
 // Main function. The order in which other subs are called here is
 // essential. Link and image substitutions need to happen before
 // _EscapeSpecialCharsWithinTagAttributes(), so that any *'s or _'s in the <a>
 // and <img> tags get encoded.
 //
-
+    headerLevelStart = headerLevelStart || 1;
 	// Clear the global hashes. If we don't clear these, you get conflicts
 	// from other articles when generating a page which contains more than
 	// one article (e.g. an index page that shows the N most recent
@@ -193,7 +193,7 @@ this.makeHtml = function(text) {
 	// Strip link definitions, store in hashes.
 	text = _StripLinkDefinitions(text);
 
-	text = _RunBlockGamut(text);
+	text = _RunBlockGamut(text, headerLevelStart);
 
 	text = _UnescapeSpecialChars(text);
 
@@ -455,12 +455,12 @@ var hashElement = function(wholeMatch,m1) {
 	return blockText;
 };
 
-var _RunBlockGamut = function(text) {
+var _RunBlockGamut = function(text, headerLevelStart) {
 //
 // These are all the transformations that form block-level
 // tags like paragraphs, headers, and list items.
 //
-	text = _DoHeaders(text);
+	text = _DoHeaders(text, headerLevelStart);
 
 	// Do Horizontal Rules:
 	var key = hashBlock("<hr />");
@@ -468,9 +468,9 @@ var _RunBlockGamut = function(text) {
 	text = text.replace(/^[ ]{0,2}([ ]?\-[ ]?){3,}[ \t]*$/gm,key);
 	text = text.replace(/^[ ]{0,2}([ ]?\_[ ]?){3,}[ \t]*$/gm,key);
 
-	text = _DoLists(text);
+	text = _DoLists(text, headerLevelStart);
 	text = _DoCodeBlocks(text);
-	text = _DoBlockQuotes(text);
+	text = _DoBlockQuotes(text, headerLevelStart);
 
 	// We already ran _HashHTMLBlocks() before, in Markdown(), but that
 	// was to escape raw HTML in the original Markdown source. This time,
@@ -765,7 +765,7 @@ var writeImageTag = function(wholeMatch,m1,m2,m3,m4,m5,m6,m7) {
 }
 
 
-var _DoHeaders = function(text) {
+var _DoHeaders = function(text, headerLevelStart) {
 
 	// Setext-style headers:
 	//	Header 1
@@ -775,10 +775,10 @@ var _DoHeaders = function(text) {
 	//	--------
 	//
 	text = text.replace(/^(.+)[ \t]*\n=+[ \t]*\n+/gm,
-		function(wholeMatch,m1){return hashBlock('<h1 id="' + headerId(m1) + '">' + _RunSpanGamut(m1) + "</h1>");});
+		function(wholeMatch,m1){return hashBlock('<h'+headerLevelStart+' id="' + headerId(m1) + '">' + _RunSpanGamut(m1) + "</h'+headerLevelStart+'>");});
 
 	text = text.replace(/^(.+)[ \t]*\n-+[ \t]*\n+/gm,
-		function(matchFound,m1){return hashBlock('<h2 id="' + headerId(m1) + '">' + _RunSpanGamut(m1) + "</h2>");});
+		function(matchFound,m1){return hashBlock('<h'+(headerLevelStart+1)+' id="' + headerId(m1) + '">' + _RunSpanGamut(m1) + "</h'+(headerLevelStart+1)+'>");});
 
 	// atx-style headers:
 	//  # Header 1
@@ -801,7 +801,7 @@ var _DoHeaders = function(text) {
 
 	text = text.replace(/^(\#{1,6})[ \t]*(.+?)[ \t]*\#*\n+/gm,
 		function(wholeMatch,m1,m2) {
-			var h_level = m1.length;
+			var h_level = headerLevelStart-1+m1.length;
 			return hashBlock("<h" + h_level + ' id="' + headerId(m2) + '">' + _RunSpanGamut(m2) + "</h" + h_level + ">");
 		});
 
@@ -814,7 +814,7 @@ var _DoHeaders = function(text) {
 // This declaration keeps Dojo compressor from outputting garbage:
 var _ProcessListItems;
 
-var _DoLists = function(text) {
+var _DoLists = function(text, headerLevelStart) {
 //
 // Form HTML ordered (numbered) and unordered (bulleted) lists.
 //
@@ -856,7 +856,7 @@ var _DoLists = function(text) {
 			// Turn double returns into triple returns, so that we can make a
 			// paragraph for the last item in a list, if necessary:
 			list = list.replace(/\n{2,}/g,"\n\n\n");;
-			var result = _ProcessListItems(list);
+			var result = _ProcessListItems(list, headerLevelStart);
 
 			// Trim any trailing whitespace, to put the closing `</$list_type>`
 			// up on the preceding line, to get it past the current stupid
@@ -876,7 +876,7 @@ var _DoLists = function(text) {
 			// Turn double returns into triple returns, so that we can make a
 			// paragraph for the last item in a list, if necessary:
 			var list = list.replace(/\n{2,}/g,"\n\n\n");;
-			var result = _ProcessListItems(list);
+			var result = _ProcessListItems(list, headerLevelStart);
 			result = runup + "<"+list_type+">\n" + result + "</"+list_type+">\n";
 			return result;
 		});
@@ -888,7 +888,7 @@ var _DoLists = function(text) {
 	return text;
 }
 
-_ProcessListItems = function(list_str) {
+_ProcessListItems = function(list_str, headerLevelStart) {
 //
 //  Process the contents of a single ordered or unordered list, splitting it
 //  into individual list items.
@@ -939,11 +939,11 @@ _ProcessListItems = function(list_str) {
 			var leading_space = m2;
 
 			if (leading_line || (item.search(/\n{2,}/)>-1)) {
-				item = _RunBlockGamut(_Outdent(item));
+				item = _RunBlockGamut(_Outdent(item), headerLevelStart);
 			}
 			else {
 				// Recursion for sub-lists:
-				item = _DoLists(_Outdent(item));
+				item = _DoLists(_Outdent(item), headerLevelStart);
 				item = item.replace(/\n$/,""); // chomp(item)
 				item = _RunSpanGamut(item);
 			}
@@ -1140,7 +1140,7 @@ var _DoItalicsAndBold = function(text) {
 }
 
 
-var _DoBlockQuotes = function(text) {
+var _DoBlockQuotes = function(text, headerLevelStart) {
 
 	/*
 		text = text.replace(/
@@ -1168,7 +1168,7 @@ var _DoBlockQuotes = function(text) {
 			bq = bq.replace(/~0/g,"");
 
 			bq = bq.replace(/^[ \t]+$/gm,"");		// trim whitespace-only lines
-			bq = _RunBlockGamut(bq);				// recurse
+			bq = _RunBlockGamut(bq, headerLevelStart);				// recurse
 
 			bq = bq.replace(/(^|\n)/g,"$1  ");
 			// These leading spaces screw with <pre> content, so we need to fix that:
